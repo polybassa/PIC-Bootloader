@@ -98,9 +98,9 @@ W_TEMP		        equ	0x7F
     ; if running at slow clock speeds.
         errorlevel -306             ; Do not show any page boundary warnings
 ;    nop                                 
-;    movlw   high(BootloaderBreakCheck)
-;    movwf   PCLATH                  ; Bx
-;    goto    BootloaderBreakCheck
+    ;movlw   high(BootloaderBreakCheck)
+    ;movwf   PCLATH                  ; Bx
+    ;goto    BootloaderBreakCheck
         errorlevel +306             ; Do not show any page boundary warnings
 
     ORG     BOOTLOADER_ADDRESS
@@ -117,23 +117,17 @@ BootloaderStart:
 ; immediately enter bootloader mode, even if there exists some application 
 ; firmware in program memory.
 BootloaderBreakCheck:
-    DigitalInput                    ; Make sure RX pin is not analog input
+   	banksel ANSELB
+   	clrf	ANSELB
+	   	
     movlw   high(AppVector)
     movwf   PCLATH                  ; Bx
     
-#ifdef INVERT_UART
-    btfss   RXPORT, RXPIN           ; B0 
+    banksel PORTB
+    btfsc   PORTB,5          		; B0  
     goto    AppVector               ; no BREAK state, attempt to start application
+    
 
-    btfsc   RXPORT, RXPIN           ; B0 BREAK found, wait for RXD to go IDLE
-    goto    $-1
-#else
-    btfsc   RXPORT, RXPIN           ; B0  
-    goto    AppVector               ; no BREAK state, attempt to start application
-
-    btfss   RXPORT, RXPIN           ; B0 BREAK found, wait for RXD to go IDLE
-    goto    $-1
-#endif
 #else ; BOOTLOADER_ADDRESS == 0 ****************************************************************
     ORG     0
 BootloaderStart:

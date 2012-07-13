@@ -5,15 +5,34 @@ import sys
 #import time
 from time import *
 
-eepromsize = 256
-flashsize = 8192
-read_step = 64
-erase_step = 8
-write_step = 16
+PIC16 = 1
+PIC18 = 0
 
-write_blocksize = 8    #Words
-erase_blocksize = 32   #Words
+#DEVICE-ID'S
+p16f1936 = 283
+pic18f26k22 = 674
 
+if PIC16:        
+    eepromsize = 256
+    flashsize = 8192
+    read_step = 64
+    erase_step = 8
+    write_step = 16
+    
+    write_blocksize = 8    #Words
+    erase_blocksize = 32   #Words
+    
+    
+if PIC18:
+    eepromsize = 1024
+    flashsize = 65536
+    read_step = 1
+    erase_step = 1
+    write_step = 1
+    
+    write_blocksize = 64    #Words
+    erase_blocksize = 64   #Words
+	
 bootadr = int()
 bootbytes = int()
 commandmask = int()
@@ -21,10 +40,11 @@ familyid = int()
 deviceid = int()
 blversion = list()
 
-#DEVICE-ID'S
-p16f1936 = 283
 
-
+#PARAMETER
+TCP_IP = '192.168.2.44'
+TCP_PORT = 2000
+BUFFER_SIZE = 1024
 
 #++++++++++++++ detect Bootloader+++++++++++++++++
 def detect_bootloader():
@@ -40,7 +60,7 @@ def detect_bootloader():
         s.send(send_data)
         print "."
         try:
-            recv_data = s.recv(1024)
+            recv_data = s.recv(BUFFER_SIZE)
         except socket.timeout:
             print "x"
             recv_data = ""
@@ -93,7 +113,7 @@ def get_bootloader_info():
     while loopcondition:
         s.send(send_data)
         try:
-            recv_data = s.recv(1024)
+            recv_data = s.recv(BUFFER_SIZE)
         except socket.timeout:
             print "x"
             recv_data = ""
@@ -146,9 +166,15 @@ def analyse_bootloader_info(string):
         deviceid = deviceid << 8
         deviceid += ord(string[10])
         deviceid = deviceid >> 0
+        if PIC16 == 0:
+            print "FAILURE: Bootloaderscript is configurated for PIC 18. Please change in Script"
+            return -1
     
+    if familyid == 4:
+        if PIC18 == 0:
+            print "FAILURE: Bootloaderscript is configurated for PIC 16. Please change in Script"
+            return -1
 
-            
 #++++++++++++++ get Bootloader info+++++++++++++++++
 def print_bootloader_info(string):
     
@@ -171,8 +197,6 @@ def print_bootloader_info(string):
         print "PIC18-Family"
 
     print "Bootloader at Address:", "%#x" %  bootadr
-    
-
 #++++++++++++++++ Run Application ++++++++++++++++++++
 def run_app():
     
@@ -184,7 +208,6 @@ def run_app():
     send_data = bytearray()
     send_data.append(0x08)        
     s.send(build_send_str(send_data))
-
 #++++++++++++++++ erase Device Flash++++++++++++++++++++
 def erase_flash():
     
@@ -214,7 +237,7 @@ def erase_flash():
         
         s.send(build_send_str(send_data))
         try:
-            recv_data = s.recv(1024)
+            recv_data = s.recv(BUFFER_SIZE)
         except socket.timeout:
             print "x"
             recv_data = ""
@@ -247,7 +270,7 @@ def read_eeprom():
     
         s.send(build_send_str(send_data))
         try:
-            recv_data = s.recv(2048)
+            recv_data = s.recv(BUFFER_SIZE)
         except socket.timeout:
             print "x"
             recv_data = ""
@@ -261,7 +284,6 @@ def read_eeprom():
                 return -1
             
     return flash_mem
-
 #++++++++++++++++ read Device Flash++++++++++++++++++++
 def read_flash():
     
@@ -286,7 +308,7 @@ def read_flash():
         
         s.send(build_send_str(send_data))
         try:
-            recv_data = s.recv(2048)
+            recv_data = s.recv(BUFFER_SIZE)
         except socket.timeout:
             print "x"
             recv_data = ""
@@ -300,8 +322,6 @@ def read_flash():
                 return -1
     
     return flash_mem
-
-
 #++++++++++++++++ print Device Flash++++++++++++++++++++
 def print_flash(flash_arr):
     
@@ -315,9 +335,7 @@ def print_flash(flash_arr):
         
     
     for i in range(0,flash_arr_words.__len__(),8):
-        print "%04X | %04X %04X %04X %04X %04X %04X %04X %04X" % (i, flash_arr_words[i], flash_arr_words[i+1],  flash_arr_words[i+2], flash_arr_words[i+3],flash_arr_words[i+4], flash_arr_words[i+5], flash_arr_words[i+6], flash_arr_words[i+7])
-
-    
+        print "%04X | %04X %04X %04X %04X %04X %04X %04X %04X" % (i, flash_arr_words[i], flash_arr_words[i+1],  flash_arr_words[i+2], flash_arr_words[i+3],flash_arr_words[i+4], flash_arr_words[i+5], flash_arr_words[i+6], flash_arr_words[i+7])  
 #++++++++++++++++ check crc ++++++++++++++++++++
 #Funktion prüft die Checksumme. Wichtig! Übergebener string muss noch alle Steuerzeichen 
 #sowie die Checksumme enthalten. Unbearbeitete Mikrocontrollerantwort.
@@ -379,7 +397,6 @@ def build_send_str(string):
             #print hex(c)
 
     return str_arr
-
 #++++++++++++++++ write Programmcode to Device Flash ++++++++++++++++++++
 def write_flash(address):
     
@@ -415,11 +432,18 @@ def write_flash(address):
 
     flash_wr_mem = bytearray()
     for e in range(0,flashsize):
-        flash_wr_mem.append(0xff)
-        flash_wr_mem.append(0x3F)
-        flash_current_mem.append(0xff)
-        flash_current_mem.append(0x3F)
-
+		if PIC16:
+			flash_wr_mem.append(0xff)
+			flash_wr_mem.append(0x3F)
+			flash_current_mem.append(0xff)
+			flash_current_mem.append(0x3F)
+		
+		if PIC18:
+			flash_wr_mem.append(0xff)
+			flash_wr_mem.append(0xff)
+			flash_current_mem.append(0xff)
+			flash_current_mem.append(0xff)
+	
     for line in file:
         
         Offset = line.find(":")
@@ -512,7 +536,7 @@ def write_flash(address):
                 s.send(write_string)
       
                 try:
-                    recv_data = s.recv(1024)
+                    recv_data = s.recv(BUFFER_SIZE)
                 except socket.timeout:
                     print "x"
                     recv_data = ""
@@ -523,43 +547,61 @@ def write_flash(address):
                         break
                     
     print "--> write successful"
+#++++++++++++++++ change IP-Adress ++++++++++++++++++++
+def change_ip(string):
+
+    temp = string.split(":")
+    if temp[1].__len__() == 0:
+		print "Parameterfehler"
+		return -1
+            
+    global TCP_IP
+    TCP_IP = temp[1]
+    print "Verwendete IP-Addresse:",TCP_IP
+	
 #************ MAIN *************************************
-
-TCP_IP = '192.168.2.44'
-TCP_PORT = 2000
-BUFFER_SIZE = 1024
-
 print ""
 print "-----------------------------------------------"
 print "                 PIC BOOTLOADER   "
 print "-----------------------------------------------"
+print " '?' for Usageinformations "
 
 for arg in sys.argv:
     #------help ARG------
     if (arg.find("help")> -1)|(arg.find("?")> -1):
+        
         print "Parameter: ?                      --> Bedienungsanleitung"
         print "Parameter: help                   --> Bedienungsanleitung"
         print "Parameter: bl_info                --> Bootloader des Mikrocontrollers auslesen"
         print "Parameter: read_flash             --> Flash-Inhalt des Mikrocontrollers auslesen"
+        print "Parameter: read_eeprom            --> EEPROM-Inhalt des Mikrocontrollers auslesen"
         print "Parameter: erase_flash            --> Flash-Inhalt der Mikrocontrollers löschen"
         print "Parameter: write_flash:code.hex   --> Programmiert den Inhalt der angegebenen Datei"
         print "Parameter: run_app                --> Startet die Application und beendet den Bootloader"
-        print "Parameter: read_eeprom            --> EEPROM-Inhalt des Mikrocontrollers auslesen"
+        print "Parameter: set_IP:xxx.xxx.xxx.xxx --> Ändert die IP zur Kommunikation mit dem Bootloader"
+        print ""
+        print "Defaultparameter:"
+        print "IP-Address:", TCP_IP
+        print "Port:", TCP_PORT
         break
+    
+    #------Change IP ARG---    
+    if (arg.find("set_IP")> -1):
+        change_ip(arg)
+    
     #------bl_info ARG---
     if (arg.find("bl_info")> -1):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((TCP_IP, TCP_PORT))    
         s.settimeout(1)
-
         recv_data = get_bootloader_info()
         print_bootloader_info(clean_data(recv_data))
 
         if check_crc(recv_data) == 0:
             print "CRC_FAIL"
+            break
 
         s.close()
-
     #-----read_flash ARG---
     if (arg.find("read_flash")> -1):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
